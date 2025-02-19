@@ -23,6 +23,10 @@ class NoIXFoundException(Error):
     """IX Not Found Exception."""
 
 
+class NoFacilityFoundException(Error):
+    """Facility Not Found Exception."""
+
+
 @dataclass
 class IXP:
     """IXP represents a specific IXP entry.
@@ -93,6 +97,9 @@ def main():
 
     if args.missing:
         print_uncommon(peers)
+
+    if args.missing_fac:
+        print_uncommon_fac(peers)
 
     exit(0)
 
@@ -189,7 +196,11 @@ def fetch_fac_from_facilities(fac: str, facs: List[Facility]) -> Facility:
         A single Facility entry matching the name of Facility.
 
     """
-    return next(i for i in facs if i.name == fac)
+    ret = [i for i in facs if i.name == fac]
+    if not ret:
+        raise NoFacilityFoundException(f"No Facility Found for {fac}")
+    else:
+        return ret.pop()
 
 
 def fetch_common_ixps(peers: List[Peer]) -> List[str]:
@@ -236,6 +247,22 @@ def fetch_common_facilities(facilities: List[Facility]) -> List[str]:
     for fac in facilities:
         common_fac = common_fac.intersection(set([i.name for i in fac.present_in]))
     return common_fac
+
+
+def fetch_different_facilities(facilities: List[Facility]) -> List[str]:
+    """Return a list of Facilities which none of the peers have in common.
+
+    Arguments:
+        facilities: A list of Facility objects for a given ASN.
+
+    Returns:
+        A list of uncommon Facilities, based in their name.
+    """
+    common_fac = fetch_common_facilities(facilities)
+    uncommon = list()
+    for fac in facilities:
+        uncommon.extend([i.name for i in fac.present_in if i.name not in common_fac])
+    return uncommon
 
 
 def print_ixp(peers: List[Peer]) -> None:
@@ -326,6 +353,35 @@ def print_uncommon(peers: List) -> None:
     print(ix_tab.get_string(sortby=f"{peer.name} speed", reversesort=True))
 
 
+def print_uncommon_fac(peers: list) -> None:
+    uncommon_fac_list = fetch_different_facilities(peers)
+    if len(uncommon_fac_list) < 1:
+        print("Didnt find any uncommon Facility, exiting...")
+        exit(1)
+    header = list()
+    header.append("Facility")
+    for peer in peers:
+        header.append(peer.name)
+
+    ix_tab = PrettyTable(header)
+    ix_tab.print_empty = False
+
+    for fac in uncommon_fac_list:
+        row = [fac]
+        for peer in peers:
+            try:
+                curr_fac = fetch_fac_from_facilities(fac, peer.present_in)
+                line = f"ASN: {curr_fac.ASN}"
+                row.append(line)
+            except NoFacilityFoundException as e:
+                line = ""
+                row.append(line)
+        ix_tab.add_row(row)
+
+    ix_tab.hrules = 1
+    print(ix_tab.get_string(sortby="Facility"))
+
+
 def getArgs():
     help_text = "Generate a table for common points in an IX. -h for help"
     parser = argparse.ArgumentParser(help_text)
@@ -343,13 +399,20 @@ def getArgs():
         default=False,
         action="store_true",
     )
+    parser.add_argument(
+        "--missing-private",
+        dest="missing_fac",
+        help="Print missing facilities",
+        default=False,
+        action="store_true",
+    )
     args = parser.parse_args()
     # Validate args here
     if not args.asn:
         print("--asn must be specified!")
         exit(1)
-    if not any([args.ix_only, args.fac_only, args.missing]):
-        print("Must specify --ix, --private or --missing!")
+    if not any([args.ix_only, args.fac_only, args.missing, args.missing_fac]):
+        print("Must specify --ix, --private, --missing or --missing-private!")
         exit(1)
 
     return args
