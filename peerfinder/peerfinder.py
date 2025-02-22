@@ -51,10 +51,12 @@ class Facility:
     Attributes:
       name: The facility name.
       ASN: Local asn.
+      country: The country code.
     """
 
     name: str
     ASN: int
+    country: str
 
 
 @dataclass
@@ -99,7 +101,7 @@ def main():
         print_uncommon(peers)
 
     if args.missing_fac:
-        print_uncommon_fac(peers)
+        print_uncommon_fac(peers, args.missing_fac)
 
     exit(0)
 
@@ -137,7 +139,7 @@ def pdb_to_fac(netfac_set: Dict) -> Facility:
     Returns:
         A Facility object.
     """
-    return Facility(name=netfac_set["name"], ASN=netfac_set["local_asn"])
+    return Facility(name=netfac_set["name"], ASN=netfac_set["local_asn"], country=netfac_set["country"])
 
 
 def _dedup_ixs(ixlan_set: Dict) -> Dict:
@@ -249,7 +251,7 @@ def fetch_common_facilities(facilities: List[Facility]) -> List[str]:
     return common_fac
 
 
-def fetch_different_facilities(facilities: List[Facility]) -> List[str]:
+def fetch_different_facilities(facilities: List[Facility], country: str) -> List[str]:
     """Return a list of Facilities which none of the peers have in common.
 
     Arguments:
@@ -261,7 +263,7 @@ def fetch_different_facilities(facilities: List[Facility]) -> List[str]:
     common_fac = fetch_common_facilities(facilities)
     uncommon = list()
     for fac in facilities:
-        uncommon.extend([i.name for i in fac.present_in if i.name not in common_fac])
+        uncommon.extend([i.name for i in fac.present_in if (i.name not in common_fac) and (country == "ALL_COUNTRY" or i.country == country)])
     return uncommon
 
 
@@ -353,13 +355,15 @@ def print_uncommon(peers: List) -> None:
     print(ix_tab.get_string(sortby=f"{peer.name} speed", reversesort=True))
 
 
-def print_uncommon_fac(peers: list) -> None:
-    uncommon_fac_list = fetch_different_facilities(peers)
+def print_uncommon_fac(peers: list, country: str) -> None:
+    uncommon_fac_list = fetch_different_facilities(peers, country)
     if len(uncommon_fac_list) < 1:
         print("Didnt find any uncommon Facility, exiting...")
         exit(1)
+    header_msg = "Facility" if country == "ALL_COUNTRY" else f"Facility in {country}"
     header = list()
-    header.append("Facility")
+    header.append(header_msg)
+
     for peer in peers:
         header.append(peer.name)
 
@@ -379,7 +383,7 @@ def print_uncommon_fac(peers: list) -> None:
         ix_tab.add_row(row)
 
     ix_tab.hrules = 1
-    print(ix_tab.get_string(sortby="Facility"))
+    print(ix_tab.get_string(sortby=header_msg))
 
 
 def getArgs():
@@ -401,10 +405,11 @@ def getArgs():
     )
     parser.add_argument(
         "--missing-private",
+        nargs="?",
         dest="missing_fac",
         help="Print missing facilities",
         default=False,
-        action="store_true",
+        const="ALL_COUNTRY",
     )
     args = parser.parse_args()
     # Validate args here
